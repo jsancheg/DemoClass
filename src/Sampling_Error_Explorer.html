@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sampling Error Explorer (Log-Normal)</title>
+    <!-- Load Tailwind CSS for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Load Chart.js for interactive plotting -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #f3f4f6; }
+        .card { box-shadow: 0 6px 10px rgba(0, 0, 0, 0.1); }
+        /* Custom styles for the scatter plot line */
+        #scatterPlotContainer { position: relative; height: 100px; }
+        .mean-dot {
+            position: absolute;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background-color: #10B981; /* Green */
+            bottom: 5px; 
+            cursor: pointer;
+            transition: all 0.1s ease;
+            z-index: 10;
+        }
+        .mean-dot:hover {
+            transform: scale(1.5);
+            box-shadow: 0 0 5px rgba(0, 0, 0, 0.5);
+        }
+        .true-mean-line {
+            position: absolute;
+            width: 2px;
+            height: 100%;
+            background-color: #EF4444; /* Red */
+            z-index: 5;
+        }
+    </style>
+</head>
+<body class="p-4 md:p-8">
+    <div class="max-w-6xl mx-auto">
+        <header class="text-center mb-8">
+            <h1 class="text-3xl md:text-4xl font-extrabold text-blue-700">Sampling Error Explorer (Log-Normal Fit)</h1>
+            <p class="text-lg text-gray-600 mt-1">Simulating the true mean $\mu$ using parameters from your data set.</p>
+        </header>
+
+        <!-- Control Panel -->
+        <div class="bg-white p-6 rounded-xl card mb-8">
+            <h2 class="text-xl font-semibold mb-4 text-blue-600">Simulation Controls</h2>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+
+                <!-- Sample Size (n) Slider -->
+                <div>
+                    <label for="sampleSize" class="block text-sm font-medium text-gray-700">1. Sample Size (n): <span id="sampleSizeValue" class="font-bold text-lg text-indigo-600">5</span></label>
+                    <input type="range" id="sampleSize" min="5" max="100" value="5" class="w-full mt-2 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer">
+                    <p class="text-xs text-gray-500 mt-1">The number of data points in *each* simulated sample (n).</p>
+                </div>
+
+                <!-- Samples (k) Input -->
+                <div>
+                    <label for="numSamples" class="block text-sm font-medium text-gray-700">2. Number of Samples (k)</label>
+                    <input type="number" id="numSamples" value="50" min="10" max="100" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border focus:ring-blue-500 focus:border-blue-500">
+                    <p class="text-xs text-gray-500 mt-1">The number of times we repeat the sampling process.</p>
+                </div>
+                
+                <!-- Run Button -->
+                <div class="flex items-end">
+                    <button onclick="runSimulation()" id="runButton" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-4 rounded-lg transition duration-150 shadow-md">
+                        RUN SIMULATION
+                    </button>
+                </div>
+            </div>
+            <p id="simulationInfo" class="mt-4 text-sm font-medium text-red-600 text-center"></p>
+        </div>
+
+        <!-- Visualization Area -->
+        <div class="grid grid-cols-1 gap-6">
+            
+            <!-- Chart 1: The Scatter of Sample Means (Top View) -->
+            <div class="bg-white p-6 rounded-xl card">
+                <h3 class="text-xl font-semibold mb-2 text-center text-gray-800">Visualizing Sampling Error (Each dot is one $\bar{x}$)</h3>
+                <div id="scatterPlotContainer" class="relative overflow-hidden border-b border-gray-300 mx-8">
+                    <!-- True mean line position will be set by JS -->
+                </div>
+                <div class="flex justify-between text-sm text-gray-500 mt-1">
+                    <span class="ml-8">Lower Sample Means (More Error)</span>
+                    <span class="mr-8">Higher Sample Means (More Error)</span>
+                </div>
+            </div>
+
+            <!-- Chart 2: Sampling Distribution (Histogram View) -->
+            <div class="bg-white p-6 rounded-xl card">
+                <h3 class="text-xl font-semibold mb-2 text-center text-gray-800">The Sampling Distribution of the Mean</h3>
+                <canvas id="samplingDistributionChart"></canvas>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        // --- Global Variables and Constants ---
+        let samplingDistributionChart;
+        
+        // PARAMETERS ESTIMATED FROM THE LOG-NORMAL FIT (sample1 data)
+        const MU_LOG = 1.9962;
+        const SIGMA_LOG = 0.6421;
+        
+        // Calculated True Mean (μ) of the Log-Normal Distribution
+        // Formula: exp(μ_log + (σ_log^2 / 2))
+        const TRUE_MU = Math.exp(MU_LOG + (SIGMA_LOG * SIGMA_LOG) / 2); // Result: ~ 9.05
+        
+        // Fixed X-axis range for the plots (as requested)
+        const X_AXIS_MIN = 0;
+        const X_AXIS_MAX = 25;
+
+        // --- Utility Functions ---
+
+        // Box-Muller transformation for standard normal (Z ~ N(0, 1))
+        let use_last = false;
+        let last_value = 0;
+        function generateStandardNormal() {
+            if (use_last) {
+                use_last = false;
+                return last_value;
+            }
+            let u, v, s;
+            do {
+                u = Math.random() * 2 - 1;
+                v = Math.random() * 2 - 1;
+                s = u * u + v * v;
+            } while (s >= 1 || s === 0);
+            const mul = Math.sqrt(-2.0 * Math.log(s) / s);
+            last_value = v * mul;
+            use_last = true;
+            return u * mul;
+        }
+
+        // Generate Log-Normal data based on provided parameters
+        function generateLogNormal(mu_log, sigma_log) {
+            const Z = generateStandardNormal(); // Z ~ N(0, 1)
+            // Lognormal Formula: X = exp(μ_log + Z * σ_log)
+            return Math.exp(mu_log + Z * sigma_log);
+        }
+
+        // Generate histogram data (bins and counts)
+        function generateHistogramData(data, bins = 20) {
+            // Use fixed min/max for binning
+            const min = X_AXIS_MIN;
+            const max = X_AXIS_MAX;
+            const range = max - min;
+            const binSize = range / bins;
+            
+            const counts = new Array(bins).fill(0);
+            const labels = new Array(bins);
+
+            for (let i = 0; i < bins; i++) {
+                labels[i] = (min + i * binSize).toFixed(2);
+            }
+
+            for (const value of data) {
+                // Ignore values outside the fixed range 0-25 for visualization
+                if (value >= min && value <= max) {
+                    let binIndex = Math.floor((value - min) / binSize);
+                    if (binIndex >= bins) binIndex = bins - 1; 
+                    counts[binIndex]++;
+                }
+            }
+            
+            return { labels, counts, min, max };
+        }
+
+        // --- Core Simulation Logic ---
+
+        async function runSimulation() {
+            const sampleSize = parseInt(document.getElementById('sampleSize').value);
+            const numSamples = parseInt(document.getElementById('numSamples').value);
+            
+            document.getElementById('runButton').disabled = true;
+            document.getElementById('simulationInfo').textContent = `Running ${numSamples} simulations...`;
+
+            const sampleMeans = [];
+            
+            // Generate all sample means
+            await new Promise(resolve => {
+                setTimeout(() => { // Minimal timeout to unblock UI thread
+                    for (let i = 0; i < numSamples; i++) {
+                        let sampleSum = 0;
+                        for (let j = 0; j < sampleSize; j++) {
+                            // Draw from the fitted Log-Normal population
+                            sampleSum += generateLogNormal(MU_LOG, SIGMA_LOG);
+                        }
+                        sampleMeans.push(sampleSum / sampleSize);
+                    }
+                    resolve();
+                }, 10); 
+            });
+
+            // Calculate the average sample mean (should be very close to TRUE_MU)
+            const averageSampleMean = sampleMeans.reduce((a, b) => a + b) / numSamples;
+            document.getElementById('simulationInfo').textContent = `Simulation Complete! Average Sample Mean (x̄̄): ${averageSampleMean.toFixed(3)} (True μ = ${TRUE_MU.toFixed(3)})`;
+
+            // --- Visualization Updates ---
+
+            // 1. Update the Scatter Plot of individual means
+            updateScatterPlot(sampleMeans);
+            
+            // 2. Update the Sampling Distribution Histogram
+            const histData = generateHistogramData(sampleMeans);
+            updateHistogram(histData, numSamples, sampleSize);
+
+            document.getElementById('runButton').disabled = false;
+        }
+
+        // --- Visualization Functions ---
+
+        function setupTrueMeanLine() {
+            const container = document.getElementById('scatterPlotContainer');
+            let trueMeanLine = document.getElementById('trueMeanLine');
+            
+            if (!trueMeanLine) {
+                trueMeanLine = document.createElement('div');
+                trueMeanLine.id = 'trueMeanLine';
+                trueMeanLine.className = 'true-mean-line';
+                container.appendChild(trueMeanLine);
+            }
+
+            // Map the TRUE_MU value (9.77) onto the 0-25 fixed axis
+            const containerWidth = container.offsetWidth;
+            const dataRange = X_AXIS_MAX - X_AXIS_MIN;
+            // Calculate the percentage position of TRUE_MU within the 0-25 range
+            const meanPercentage = (TRUE_MU - X_AXIS_MIN) / dataRange; 
+            
+            // Position the red line
+            const leftPos = containerWidth * meanPercentage;
+            trueMeanLine.style.left = `${leftPos}px`;
+            trueMeanLine.title = `True Population Mean (μ): ${TRUE_MU.toFixed(3)}`;
+        }
+
+        function updateScatterPlot(sampleMeans) {
+            const container = document.getElementById('scatterPlotContainer');
+            setupTrueMeanLine(); // Ensure the line is drawn and positioned
+
+            // Clear previous dots
+            container.querySelectorAll('.mean-dot').forEach(dot => dot.remove());
+
+            const containerWidth = container.offsetWidth;
+            const dataRange = X_AXIS_MAX - X_AXIS_MIN;
+
+            // Create new dots
+            sampleMeans.forEach(mean => {
+                if (mean >= X_AXIS_MIN && mean <= X_AXIS_MAX) {
+                    const dot = document.createElement('div');
+                    dot.className = 'mean-dot';
+                    dot.title = `Sample Mean: ${mean.toFixed(3)}`;
+
+                    // Calculate position based on fixed 0-25 range
+                    const meanPercentage = (mean - X_AXIS_MIN) / dataRange;
+                    let leftPos = containerWidth * meanPercentage;
+
+                    // Clamp position to avoid going outside the container bounds (adjust for dot width 10px)
+                    leftPos = Math.max(5, Math.min(containerWidth - 15, leftPos));
+
+                    dot.style.left = `${leftPos}px`;
+                    container.appendChild(dot);
+                }
+            });
+        }
+
+        function updateHistogram(histData, numSamples, sampleSize) {
+            const ctx = document.getElementById('samplingDistributionChart').getContext('2d');
+
+            if (samplingDistributionChart) {
+                samplingDistributionChart.destroy();
+            }
+
+            const chartConfig = {
+                type: 'bar',
+                data: {
+                    labels: histData.labels,
+                    datasets: [{
+                        label: `Sampling Distribution (k=${numSamples})`,
+                        data: histData.counts,
+                        backgroundColor: '#10B981', // Green
+                        borderColor: '#059669',
+                        borderWidth: 1,
+                        categoryPercentage: 1.0,
+                        barPercentage: 1.0,
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: {
+                        legend: { display: false },
+                        title: { 
+                            display: true, 
+                            text: `Distribution of Sample Means (n=${sampleSize}). Note the Spread.`,
+                            font: { size: 16, weight: 'bold' }
+                        },
+                        annotation: {
+                            annotations: {
+                                line1: {
+                                    type: 'line',
+                                    mode: 'vertical',
+                                    scaleID: 'x',
+                                    value: TRUE_MU,
+                                    borderColor: '#EF4444',
+                                    borderWidth: 2,
+                                    label: {
+                                        content: `True Mean μ=${TRUE_MU.toFixed(2)}`,
+                                        enabled: true,
+                                        position: 'top',
+                                        backgroundColor: '#EF4444'
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            title: { display: true, text: `Sample Mean (x̄) - Range Fixed [${X_AXIS_MIN}, ${X_AXIS_MAX}]` },
+                            grid: { display: false },
+                            min: X_AXIS_MIN, // Fixed min X-axis
+                            max: X_AXIS_MAX, // Fixed max X-axis
+                        },
+                        y: {
+                            title: { display: true, text: 'Frequency' },
+                            grid: { display: false },
+                            beginAtZero: true
+                        }
+                    },
+                }
+            };
+            
+            samplingDistributionChart = new Chart(ctx, chartConfig);
+        }
+
+        // --- Event Listeners and Initial Run ---
+        window.onload = function() {
+            // Update the slider value display
+            document.getElementById('sampleSize').addEventListener('input', (e) => {
+                document.getElementById('sampleSizeValue').textContent = e.target.value;
+            });
+            
+            // Set up the initial true mean line position
+            setupTrueMeanLine();
+            
+            // Recalculate mean line position on window resize
+            window.addEventListener('resize', setupTrueMeanLine);
+
+
+            // Initial run when the page loads
+            runSimulation();
+        };
+    </script>
+</body>
+</html>
