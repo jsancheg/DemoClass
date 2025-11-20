@@ -1,0 +1,44 @@
+---
+title: "Datasaurus Dozen"
+author: "Jorge Sanchez"
+date: '`r Sys.Date()`'
+output: github_document
+---
+
+```{r setup, include = FALSE}
+library(knitr)
+knitr::opts_chunk$set(cache = TRUE, cache.lazy = FALSE,
+                      warning = FALSE, message = FALSE,
+                      echo = TRUE, dpi = 100, 
+                      fig.width = 8, fig.height = 5)
+
+library(tidyverse)
+library(silgelib)
+theme_set(theme_plex())
+
+## if you don't have fancy plots like IBM Plex installed, run ## theme_set(theme_minumal())
+```
+
+Let's build a model for [the Datasaurus
+Dozen](https://github.com/rfordatascience/tidytuesday/blob/master/data/2020/2020-10-13/readme.md). We can predict member of the "dozen" each point belongs to.
+
+
+## Explore data
+
+```{r}
+library(tidyverse)
+library(datasauRus)
+
+datasaurus_dozen  
+```
+
+```{r}
+datasaurus_dozen %>%
+  ggplot(aes(x,y, color = dataset)) + 
+  geom_point(alpha = 0.8, show.legend = FALSE)+
+  facet_wrap(~dataset, ncol = 5)
+```
+
+## Build a model
+
+## Evaluate a model

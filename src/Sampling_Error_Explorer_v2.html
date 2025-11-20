@@ -1,0 +1,523 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lognormal Sampling Error Explorer</title>
+    
+    <!-- KaTeX CSS for rendering math equations -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.13.18/dist/katex.min.css" crossorigin="anonymous">
+    <!-- KaTeX JS and auto-render extension -->
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.13.18/dist/katex.min.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.13.18/dist/contrib/auto-render.min.js" crossorigin="anonymous" onload="renderMathInElement(document.body);"></script>
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f7f9fb;
+        }
+        .container {
+            max-width: 1000px;
+        }
+        canvas {
+            border: 2px solid #3b82f6;
+            background-color: #ffffff;
+            border-radius: 0.5rem;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 16px;
+            height: 16px;
+            background: #3b82f6;
+            border-radius: 50%;
+            cursor: pointer;
+            box-shadow: 0 0 2px rgba(0,0,0,0.5);
+        }
+        input[type=range]::-moz-range-thumb {
+            width: 16px;
+            height: 16px;
+            background: #3b82f6;
+            border-radius: 50%;
+            cursor: pointer;
+            border: none;
+            box-shadow: 0 0 2px rgba(0,0,0,0.5);
+        }
+    </style>
+</head>
+<body class="p-4 md:p-8">
+
+    <div class="container mx-auto bg-white p-6 md:p-10 rounded-xl shadow-2xl">
+        <h1 class="text-3xl font-bold text-gray-800 mb-6 border-b pb-2">Lognormal Sampling Error Explorer</h1>
+
+        <!-- Population Parameters and Visualization -->
+        <div class="mb-8 p-4 bg-blue-50 rounded-lg border border-blue-200">
+            <h2 class="text-xl font-semibold text-blue-800 mb-3 flex items-center">
+                Population Distribution (Lognormal)
+            </h2>
+            <p class="text-sm text-gray-600 mb-3">
+                Parameters estimated from provided sample (fixed): 
+                Log-Mean $\mu_{L} = 2.09$, Log-Std. Dev. $\sigma_{L} = 0.60$.
+            </p>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="p-3 bg-white rounded-lg shadow-sm">
+                    <p class="text-sm text-gray-500">Theoretical Population Mean ($\mu$)</p>
+                    <p id="pop-mu" class="text-2xl font-bold text-blue-600">9.63</p>
+                </div>
+                <div class="p-3 bg-white rounded-lg shadow-sm">
+                    <p class="text-sm text-gray-500">Theoretical Population Std. Dev. ($\sigma$)</p>
+                    <p id="pop-sigma" class="text-2xl font-bold text-blue-600">6.46</p>
+                </div>
+            </div>
+
+            <div class="mt-4">
+                <canvas id="populationCanvas" width="900" height="150" class="w-full"></canvas>
+            </div>
+        </div>
+
+        <!-- Sampling Control and Visualization -->
+        <div class="mb-8 p-4 bg-green-50 rounded-lg border border-green-200">
+            <h2 class="text-xl font-semibold text-green-800 mb-3">Sampling Controls</h2>
+
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                <div>
+                    <label for="sample-size" class="block text-sm font-medium text-gray-700 mb-1">Sample Size ($n$): <span id="sample-size-value" class="font-bold text-green-600">30</span></label>
+                    <input type="range" id="sample-size" min="5" max="100" value="30" step="5" class="w-full h-2 bg-green-200 rounded-lg appearance-none cursor-pointer">
+                </div>
+                <div>
+                    <label for="num-samples" class="block text-sm font-medium text-gray-700 mb-1">Number of Samples to Draw: <span id="num-samples-value" class="font-bold text-green-600">10</span></label>
+                    <input type="range" id="num-samples" min="10" max="100" value="10" step="10" class="w-full h-2 bg-green-200 rounded-lg appearance-none cursor-pointer">
+                </div>
+                <div class="flex items-end">
+                    <button id="draw-sample-btn" class="w-full bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-lg transition duration-150 shadow-md hover:shadow-lg">
+                        Draw Sample(s)
+                    </button>
+                </div>
+            </div>
+
+            <div class="mt-4">
+                <canvas id="samplingDistributionCanvas" width="900" height="250" class="w-full"></canvas>
+            </div>
+        </div>
+
+        <!-- Results and Error Calculation -->
+        <div class="p-4 bg-yellow-50 rounded-lg border border-yellow-200">
+            <h2 class="text-xl font-semibold text-yellow-800 mb-3">Sampling Error Analysis</h2>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 text-center">
+                <div class="p-3 bg-white rounded-lg shadow-sm">
+                    <p class="text-sm text-gray-500">Population Mean ($\mu$)</p>
+                    <p id="result-mu" class="text-2xl font-bold text-blue-600">9.63</p>
+                </div>
+                <div class="p-3 bg-white rounded-lg shadow-sm">
+                    <p class="text-sm text-gray-500">Mean of Sample Means ($\bar{x}_{\text{mean}}$)</p>
+                    <p id="result-sample-mean" class="text-2xl font-bold text-green-600">N/A</p>
+                </div>
+                <div class="p-3 bg-white rounded-lg shadow-sm">
+                    <p class="text-sm text-gray-500">Theoretical Standard Error ($\sigma_{\bar{x}}$)</p>
+                    <p id="result-theoretical-se" class="text-2xl font-bold text-blue-600">N/A</p>
+                </div>
+                <div class="p-3 bg-white rounded-lg shadow-sm">
+                    <p class="text-sm text-gray-500">Empirical Standard Error ($\text{SE}_{\text{empirical}}$)</p>
+                    <p id="result-empirical-se" class="text-2xl font-bold text-green-600">N/A</p>
+                </div>
+            </div>
+
+            <div class="mt-4 p-3 bg-white rounded-lg shadow-sm">
+                <p class="text-sm text-gray-500 mb-1">Standard Error Formula</p>
+                <div id="se-formula" class="text-center text-lg font-mono text-gray-700">
+                    <!-- KaTeX will render the formula here -->
+                </div>
+            </div>
+
+            <button id="reset-btn" class="mt-4 w-full bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded-lg transition duration-150 shadow-md hover:shadow-lg">
+                Reset All Samples
+            </button>
+        </div>
+
+    </div>
+
+    <script>
+        // --- Canvas Setup ---
+        const popCanvas = document.getElementById('populationCanvas');
+        const popCtx = popCanvas.getContext('2d');
+        const sampCanvas = document.getElementById('samplingDistributionCanvas');
+        const sampCtx = sampCanvas.getContext('2d');
+
+        // --- DOM Elements ---
+        const sampleSizeInput = document.getElementById('sample-size');
+        const numSamplesInput = document.getElementById('num-samples');
+        const drawBtn = document.getElementById('draw-sample-btn');
+        const resetBtn = document.getElementById('reset-btn');
+
+        const sampleSizeValueSpan = document.getElementById('sample-size-value');
+        const numSamplesValueSpan = document.getElementById('num-samples-value');
+
+        const resultMu = document.getElementById('result-mu');
+        const resultSampleMean = document.getElementById('result-sample-mean');
+        const resultTheoreticalSE = document.getElementById('result-theoretical-se');
+        const resultEmpiricalSE = document.getElementById('result-empirical-se');
+        const seFormulaDiv = document.getElementById('se-formula');
+
+        // --- FIXED Lognormal Parameters (Estimated from Sample 1) ---
+        // Lognormal(mu_L, sigma_L) where Y = ln(X) ~ N(mu_L, sigma_L^2)
+        const MU_LOG = 1.9962; 
+        const SIGMA_LOG = 0.6421; 
+
+        // Theoretical Population Parameters (X ~ Lognormal)
+        const MU_POP = Math.exp(MU_LOG + Math.pow(SIGMA_LOG, 2) / 2); // E[X]
+        const VAR_POP = (Math.exp(Math.pow(SIGMA_LOG, 2)) - 1) * Math.exp(2 * MU_LOG + Math.pow(SIGMA_LOG, 2));
+        const SIGMA_POP = Math.sqrt(VAR_POP); // SD[X]
+        
+        // --- State Variables ---
+        let sampleSize_n = 30;
+        let numSamplesToDraw = 10;
+        let sampleMeans = [];
+
+        // --- Constants for Drawing (Fixed Plot Limits 0 to 25) ---
+        const MIN_VAL = 0;
+        const MAX_VAL = 25; // As per requirement
+        const X_SCALE = popCanvas.width / (MAX_VAL - MIN_VAL);
+        const X_OFFSET = 0;
+
+        // --- Helper Functions ---
+
+        /**
+         * Calculates the probability density function (PDF) for a Lognormal distribution.
+         * @param {number} x - The value at which to evaluate the PDF.
+         * @param {number} mu_L - The log-mean.
+         * @param {number} sigma_L - The log-std. dev.
+         * @returns {number} The PDF value.
+         */
+        function logNormalPDF(x, mu_L, sigma_L) {
+            if (x <= 0 || sigma_L <= 0) return 0;
+            const y = Math.log(x);
+            const normalFactor = 1 / (sigma_L * x * Math.sqrt(2 * Math.PI));
+            const exponent = -0.5 * Math.pow((y - mu_L) / sigma_L, 2);
+            return normalFactor * Math.exp(exponent);
+        }
+
+        /**
+         * Generates a random number from a standard normal distribution N(0, 1) using Box-Muller.
+         * @returns {number} A standard normally distributed random number (Z).
+         */
+        function standardNormalRNG() {
+            let u1, u2, z0;
+            let runAgain = true;
+            // Use rejection sampling to ensure we get usable values
+            while (runAgain) {
+                u1 = Math.random();
+                u2 = Math.random();
+                if (u1 !== 0 && u2 !== 0) runAgain = false;
+            }
+            // Box-Muller transform
+            z0 = Math.sqrt(-2.0 * Math.log(u1)) * Math.cos(2.0 * Math.PI * u2);
+            return z0;
+        }
+        
+        /**
+         * Generates a random number from a Lognormal distribution.
+         * @returns {number} A Lognormally distributed random number.
+         */
+        function logNormalRNG(mu_L, sigma_L) {
+            const z = standardNormalRNG();
+            return Math.exp(mu_L + sigma_L * z);
+        }
+
+        /**
+         * Generates a single sample of size n from the population.
+         * @returns {number[]} Array of sample values.
+         */
+        function generateSample() {
+            const sample = [];
+            for (let i = 0; i < sampleSize_n; i++) {
+                // Generate Lognormal value and ensure it is within displayable bounds (clamped to 0-25)
+                const value = logNormalRNG(MU_LOG, SIGMA_LOG);
+                sample.push(Math.min(MAX_VAL, Math.max(MIN_VAL, value)));
+            }
+            return sample;
+        }
+
+        /**
+         * Calculates the mean of an array of numbers.
+         * @param {number[]} arr - Array of numbers.
+         * @returns {number} The mean.
+         */
+        function calculateMean(arr) {
+            if (arr.length === 0) return 0;
+            return arr.reduce((a, b) => a + b, 0) / arr.length;
+        }
+
+        /**
+         * Calculates the sample standard deviation (unbiased estimator) of an array of numbers.
+         * @param {number[]} arr - Array of numbers.
+         * @param {number} mean - The pre-calculated mean.
+         * @returns {number} The sample standard deviation.
+         */
+        function calculateSampleStdDev(arr, mean) {
+            if (arr.length < 2) return 0;
+            const variance = arr.reduce((sum, x) => sum + Math.pow(x - mean, 2), 0) / (arr.length - 1);
+            return Math.sqrt(variance);
+        }
+
+        // --- Drawing Functions ---
+
+        /**
+         * Draws the distribution curve.
+         * @param {CanvasRenderingContext2D} ctx - The canvas context.
+         * @param {number} width - Canvas width.
+         * @param {number} height - Canvas height.
+         * @param {function} pdfFunction - The PDF function (logNormalPDF or normalPDF)
+         * @param {number} mean - Distribution mean.
+         * @param {number} stdDev - Distribution standard deviation.
+         * @param {string} color - Line color.
+         * @param {number} maxPDF - Max PDF value for scaling (optional).
+         * @param {boolean} isLognormal - Flag to use Lognormal or Normal PDF
+         * @returns {number} The maximum PDF value drawn.
+         */
+        function drawDistribution(ctx, width, height, pdfFunction, mean, stdDev, color, maxPDF = 0, isLognormal = false) {
+            ctx.beginPath();
+            let currentMaxPDF = maxPDF;
+            const step = (MAX_VAL - MIN_VAL) / width; // Use fine steps for smooth curve
+
+            // 1. Determine Max PDF for scaling if not provided (check up to 1.5 * MU_POP for Lognormal)
+            if (maxPDF === 0) {
+                // Determine a sensible range for Lognormal
+                const endRange = isLognormal ? 20 : MAX_VAL; 
+                for (let x = MIN_VAL; x <= endRange; x += step) {
+                    const pdfVal = isLognormal ? pdfFunction(x, MU_LOG, SIGMA_LOG) : pdfFunction(x, mean, stdDev);
+                    currentMaxPDF = Math.max(currentMaxPDF, pdfVal);
+                }
+            }
+
+            // 2. Draw the curve
+            for (let x = MIN_VAL; x <= MAX_VAL; x += step) {
+                const y_pdf = isLognormal ? pdfFunction(x, MU_LOG, SIGMA_LOG) : pdfFunction(x, mean, stdDev);
+                // Scale x to canvas width
+                const canvasX = (x - MIN_VAL) * X_SCALE;
+                // Scale y to canvas height. Invert y-axis for drawing (0 is top).
+                const canvasY = height - (y_pdf / currentMaxPDF) * (height * 0.95); // Use 95% height for padding
+
+                if (x === MIN_VAL) {
+                    ctx.moveTo(canvasX, canvasY);
+                } else {
+                    ctx.lineTo(canvasX, canvasY);
+                }
+            }
+
+            ctx.lineWidth = 2;
+            ctx.strokeStyle = color;
+            ctx.stroke();
+
+            // 3. Draw mean line
+            const meanX = (MU_POP - MIN_VAL) * X_SCALE;
+            ctx.beginPath();
+            ctx.moveTo(meanX, height);
+            ctx.lineTo(meanX, height * 0.9);
+            ctx.strokeStyle = color;
+            ctx.lineWidth = 1;
+            ctx.setLineDash([4, 4]); // Dashed line
+            ctx.stroke();
+            ctx.setLineDash([]); // Reset line dash
+
+            return currentMaxPDF;
+        }
+        
+        // Helper for Normal PDF (needed for Sampling Distribution approximation)
+        function normalPDF(x, mean, stdDev) {
+            if (stdDev <= 0) return 0;
+            const exponent = -0.5 * Math.pow((x - mean) / stdDev, 2);
+            return (1 / (stdDev * Math.sqrt(2 * Math.PI))) * Math.exp(exponent);
+        }
+
+        /**
+         * Draws the population distribution.
+         */
+        function drawPopulation() {
+            popCtx.clearRect(0, 0, popCanvas.width, popCanvas.height);
+
+            // Draw X-axis
+            popCtx.beginPath();
+            popCtx.moveTo(0, popCanvas.height);
+            popCtx.lineTo(popCanvas.width, popCanvas.height);
+            popCtx.strokeStyle = '#374151';
+            popCtx.lineWidth = 1;
+            popCtx.stroke();
+
+            // Draw the population distribution (Lognormal)
+            drawDistribution(popCtx, popCanvas.width, popCanvas.height, logNormalPDF, MU_POP, SIGMA_POP, '#1d4ed8', 0, true);
+
+            // Add labels
+            popCtx.fillStyle = '#1d4ed8';
+            popCtx.font = '12px Inter';
+            popCtx.textAlign = 'center';
+            popCtx.fillText('Population (X) - Lognormal', popCanvas.width / 2, 15);
+            popCtx.fillText(MU_POP.toFixed(1), (MU_POP - MIN_VAL) * X_SCALE, popCanvas.height - 5);
+        }
+
+        /**
+         * Draws the sampling distribution of the mean.
+         */
+        function drawSamplingDistribution() {
+            sampCtx.clearRect(0, 0, sampCanvas.width, sampCtx.height);
+
+            // Draw X-axis
+            sampCtx.beginPath();
+            sampCtx.moveTo(0, sampCanvas.height);
+            sampCtx.lineTo(sampCanvas.width, sampCtx.height);
+            sampCtx.strokeStyle = '#374151';
+            sampCtx.lineWidth = 1;
+            sampCtx.stroke();
+
+            // 1. Draw Theoretical Sampling Distribution (Normal approx. due to Central Limit Theorem)
+            const theoreticalSE = SIGMA_POP / Math.sqrt(sampleSize_n);
+            // We use the theoretical MU_POP and theoreticalSE for the theoretical sampling curve
+            const theoreticalMaxPDF = drawDistribution(sampCtx, sampCanvas.width, sampCtx.height, normalPDF, MU_POP, theoreticalSE, '#10b981', 0, false);
+
+            // 2. Plot the individual sample means histogram
+            const binSize = 0.5; // Size of the bins for the histogram
+            const counts = {}; // Store frequency counts for sample means
+
+            // Calculate counts
+            sampleMeans.forEach(mean => {
+                const bin = Math.floor(mean / binSize) * binSize;
+                counts[bin] = (counts[bin] || 0) + 1;
+            });
+
+            const maxCount = sampleMeans.length > 0 ? Math.max(...Object.values(counts)) : 0;
+            const maxBarHeight = sampCanvas.height * 0.95;
+
+            // Draw the empirical histogram (bars)
+            sampCtx.fillStyle = 'rgba(16, 185, 129, 0.5)'; // Semi-transparent green
+            for (const bin in counts) {
+                const count = counts[bin];
+                const xStart = (parseFloat(bin) - MIN_VAL) * X_SCALE;
+                const barWidth = binSize * X_SCALE;
+                const barHeight = (count / maxCount) * (maxBarHeight / 2); // Use half the height for the bar chart 
+                const canvasY = sampCanvas.height - barHeight;
+
+                sampCtx.fillRect(xStart, canvasY, barWidth, barHeight);
+            }
+
+            // Draw the mean of sample means (the rect line)
+            if (sampleMeans.length > 0) {
+                const meanOfMeans = calculateMean(sampleMeans);
+                const meanOfMeansX = (meanOfMeans - MIN_VAL) * X_SCALE;
+
+                sampCtx.beginPath();
+                sampCtx.moveTo(meanOfMeansX, 0);
+                sampCtx.lineTo(meanOfMeansX, sampCanvas.height);
+                sampCtx.strokeStyle = '#ef4444'; // Red for empirical mean
+                sampCtx.lineWidth = 2;
+                sampCtx.setLineDash([2, 2]);
+                sampCtx.stroke();
+                sampCtx.setLineDash([]);
+
+                sampCtx.fillStyle = '#ef4444';
+                sampCtx.font = '12px Inter';
+                sampCtx.textAlign = 'center';
+                sampCtx.fillText(`\\bar{x}_{\\text{mean}}`, meanOfMeansX, sampCanvas.height - 5);
+            }
+
+            // Add labels
+            sampCtx.fillStyle = '#10b981';
+            sampCtx.font = '12px Inter';
+            sampCtx.textAlign = 'center';
+            sampCtx.fillText('Sampling Distribution (\\bar{x})', sampCanvas.width / 2, 15);
+        }
+
+        // --- Core Logic ---
+
+        function updateDisplay() {
+            // Update parameter spans
+            sampleSizeValueSpan.textContent = sampleSize_n.toFixed(0);
+            numSamplesValueSpan.textContent = numSamplesToDraw.toFixed(0);
+            
+            // Update static results (fixed parameters)
+            resultMu.textContent = MU_POP.toFixed(2);
+            document.getElementById('pop-mu').textContent = MU_POP.toFixed(2);
+            document.getElementById('pop-sigma').textContent = SIGMA_POP.toFixed(2);
+
+            // Update Standard Error Formula KaTeX
+            const seFormula = `\\sigma_{\\bar{x}} = \\frac{\\sigma}{\\sqrt{n}} = \\frac{${SIGMA_POP.toFixed(3)}}{\\sqrt{${sampleSize_n}}}`;
+            katex.render(seFormula, seFormulaDiv, { throwOnError: false });
+
+            // Redraw plots
+            drawPopulation();
+            drawSamplingDistribution();
+            updateResults();
+        }
+
+        function updateResults() {
+            // Calculate theoretical values
+            const theoreticalSE = SIGMA_POP / Math.sqrt(sampleSize_n);
+            resultTheoreticalSE.textContent = theoreticalSE.toFixed(3);
+
+            if (sampleMeans.length === 0) {
+                resultSampleMean.textContent = 'N/A';
+                resultEmpiricalSE.textContent = 'N/A';
+                return;
+            }
+
+            // Calculate empirical values
+            const meanOfMeans = calculateMean(sampleMeans);
+            const empiricalSE = calculateSampleStdDev(sampleMeans, meanOfMeans);
+
+            resultSampleMean.textContent = meanOfMeans.toFixed(3);
+            resultEmpiricalSE.textContent = empiricalSE.toFixed(3);
+        }
+
+        function drawSamples() {
+            // Prevent drawing too many samples which can freeze the UI temporarily
+            if (numSamplesToDraw > 1000) {
+                 // In a real application, you'd use a modal or message box instead of console.error
+                console.error("Too many samples requested. Max 1000 for smooth simulation.");
+                numSamplesToDraw = 100;
+                numSamplesInput.value = 100;
+            }
+
+            for (let i = 0; i < numSamplesToDraw; i++) {
+                const sample = generateSample();
+                const sampleMean = calculateMean(sample);
+                sampleMeans.push(sampleMean);
+            }
+            updateDisplay();
+        }
+
+        function resetSimulation() {
+            sampleMeans = [];
+            updateDisplay();
+        }
+
+        // --- Event Listeners ---
+
+        sampleSizeInput.addEventListener('input', () => {
+            sampleSize_n = parseInt(sampleSizeInput.value);
+            // Reset simulation when sample size changes, as theoretical SE changes
+            resetSimulation();
+        });
+
+        numSamplesInput.addEventListener('input', () => {
+            numSamplesToDraw = parseInt(numSamplesInput.value);
+            numSamplesValueSpan.textContent = numSamplesToDraw.toFixed(0);
+        });
+
+        drawBtn.addEventListener('click', drawSamples);
+        resetBtn.addEventListener('click', resetSimulation);
+
+
+        // --- Initialization ---
+
+        // Initial call to draw and set up
+        window.onload = function() {
+            updateDisplay();
+        };
+
+    </script>
+</body>
+</html>
